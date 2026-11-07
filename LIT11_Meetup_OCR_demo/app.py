@@ -60,7 +60,7 @@ endpoint = os.getenv("AZURE_CU_ENDPOINT", "")
 deployments = {"gpt-4.1-mini": os.getenv("AZURE_CU_COMPLETION_DEPLOYMENT", "gpt-4.1-mini"),
                "text-embedding-3-small": os.getenv("AZURE_CU_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")}
 records = st.session_state.setdefault("records", {})
-saved_schema = st.session_state.setdefault("saved_schema", dict(TUNED_DESCRIPTIONS))
+saved_schema = st.session_state.setdefault("saved_schema", dict(BASE_DESCRIPTIONS))
 for field in FIELD_LABELS:
     st.session_state.setdefault(f"schema_{field}", saved_schema[field])
 

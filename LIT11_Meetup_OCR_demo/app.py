@@ -106,11 +106,16 @@ with input_col:
         files = [(f.name, f.getvalue()) for f in uploads or []]
     else:
         sample_dir = Path(__file__).parent / "samples"
-        available = [p for p in sample_dir.glob("*.pdf")]
-        selected = st.multiselect("예제 선택", available, default=available[:1], format_func=lambda p: {"easy_event.pdf":"기본 행사 안내", "tricky_event.pdf":"날짜가 여러 개인 안내"}.get(p.name, p.name))
+        sample_labels = {
+            "knu_slogan.png": "경북대학교 개교 80주년 슬로건 공모전",
+            "lit11.jpg": "2026 LIT 11월 Meetup",
+            "lit6.jpg": "2026 LIT 6월 Meetup",
+        }
+        available = [sample_dir / name for name in sample_labels if (sample_dir / name).is_file()]
+        selected = st.multiselect("예제 선택", available, default=available[:1], format_func=lambda p: sample_labels[p.name])
         files = [(p.name, p.read_bytes()) for p in selected]
         if not available:
-            st.info("예제 파일이 없습니다. 저장소의 samples 폴더를 함께 받아 주세요.")
+            st.info("예제 이미지가 없습니다. samples 폴더에 knu_slogan.png, lit11.jpg, lit6.jpg를 넣어 주세요. 내 파일에서 직접 올려도 분석할 수 있습니다.")
     st.caption("최대 5개 · 파일당 10MB · JPG / PNG / PDF")
 with tip_col:
     with st.container(border=True):

@@ -19,20 +19,36 @@ from demo_logic import MODE_LABELS, analysis_steps, validate_inputs, comparison_
 from event_utils import normalize_fields, extract_markdown, source_regions, make_ics, make_deadline_ics
 
 load_dotenv()
-st.set_page_config(page_title="포스터를 일정으로 | LIT", page_icon="🗓️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="포스터를 일정으로 | LIT", page_icon="🗓️", layout="wide", initial_sidebar_state="auto")
 st.markdown("""
 <style>
-.block-container {max-width:1180px;padding-top:2rem;padding-bottom:3rem;}
-.hero {background:linear-gradient(120deg,#102b41,#12636c);padding:32px;border-radius:20px;margin-bottom:24px;color:white;}
-.hero .eyebrow {font-size:12px;letter-spacing:3px;color:#98e4d3;}
-.hero h1 {color:white;font-size:2.3rem;line-height:1.25;margin:12px 0;}
-.hero p {color:#daebef;margin-bottom:0;max-width:650px;}
+.block-container {max-width:1100px;padding-top:2rem;padding-bottom:3rem;}
+.hero {background:#102b41;padding:24px 28px;border-radius:16px;margin-bottom:24px;color:#fff;}
+.hero .eyebrow {font-size:14px;letter-spacing:1px;color:#98e4d3;}
+.hero h1 {color:#fff;font-size:2rem;line-height:1.3;margin:8px 0;}
+.hero p {color:#daebef;margin:0;max-width:55ch;line-height:1.7;}
+[data-testid="stMain"] p,[data-testid="stSidebar"] p {line-height:1.65;overflow-wrap:anywhere;}
+[data-testid="stCaptionContainer"] p {font-size:0.9rem;color:#475569;}
+[data-testid="stText"] pre {white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:1rem;line-height:1.75;}
+[data-testid="stTextArea"] textarea {font-size:1rem;line-height:1.6;}
+[data-testid="stTextInput"] input {font-size:1rem;}
+[data-testid="stButton"] button,[data-testid="stDownloadButton"] button,[data-testid="stFormSubmitButton"] button {min-height:44px;}
+[data-testid="stRadio"] label {min-height:44px;align-items:center;}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible {outline:3px solid #1d4ed8;outline-offset:3px;}
 div[data-testid="stExpander"] {border-radius:12px;}
-@media(max-width:640px){.block-container{padding:1rem;}.hero{padding:22px;}.hero h1{font-size:1.7rem;}}
+[data-testid="stTable"] {overflow-x:auto;}
+@media(max-width:640px){
+  .block-container{padding:1rem;}
+  .hero{padding:20px;}.hero h1{font-size:1.6rem;}
+  [data-testid="stHorizontalBlock"]{flex-wrap:wrap;}
+  [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important;min-width:0;}
+  [role="tablist"]{flex-wrap:wrap;gap:4px;}
+  [role="tab"]{min-height:44px;white-space:normal;}
+}
 </style>
 <div class="hero"><div class="eyebrow">LIT · DOCUMENT PLAYGROUND</div>
-<h1>같은 포스터, 다른 질문.</h1>
-<p>AI가 무엇을 찾아야 할지 직접 정해 보세요.<br>필드 설명을 바꾸고, 결과를 비교하고, 확인한 정보를 일정으로 가져갑니다.</p></div>
+<h1>포스터를 읽고, 일정으로.</h1>
+<p>글자만 읽어 보거나, 필요한 정보를 정해 추출해 보세요.</p></div>
 """, unsafe_allow_html=True)
 
 MIME = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
@@ -40,11 +56,16 @@ endpoint = os.getenv("AZURE_CU_ENDPOINT", "")
 deployments = {"gpt-4.1-mini": os.getenv("AZURE_CU_COMPLETION_DEPLOYMENT", "gpt-4.1-mini"),
                "text-embedding-3-small": os.getenv("AZURE_CU_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")}
 records = st.session_state.setdefault("records", {})
+saved_schema = st.session_state.setdefault("saved_schema", dict(TUNED_DESCRIPTIONS))
 for field in FIELD_LABELS:
-    st.session_state.setdefault(f"schema_{field}", TUNED_DESCRIPTIONS[field])
+    st.session_state.setdefault(f"schema_{field}", saved_schema[field])
+
+def remember_schema(field):
+    saved_schema[field] = st.session_state[f"schema_{field}"]
 
 def preset(values):
     for field in FIELD_LABELS:
+        saved_schema[field] = values[field]
         st.session_state[f"schema_{field}"] = values[field]
 
 def show_source(data, name, result=None, field=None, widget_key="source"):
@@ -93,9 +114,9 @@ with input_col:
     st.caption("최대 5개 · 파일당 10MB · JPG / PNG / PDF")
 with tip_col:
     with st.container(border=True):
-        st.markdown("**오늘의 미션**")
-        st.write("신청 마감일과 행사 날짜를 구분해 보세요. 장소, 주최, 신청 링크의 설명도 각각 바꿀 수 있어요.")
-        st.caption("설명을 수정해도 바로 요청하지 않습니다. 아래 실행 버튼을 눌러 적용하세요.")
+        st.markdown("**처음이라면 이렇게 해 보세요**")
+        st.write("① 포스터 선택 → ② 글자만 읽기 → ③ 스키마 튜닝")
+        st.caption("스키마는 행사 날짜·장소처럼 AI가 찾아야 할 항목과 그 설명입니다.")
 if files:
     with st.expander("선택한 원본 미리보기"):
         preview_index = st.selectbox("미리 볼 파일", range(len(files)), format_func=lambda i: f"{i+1}. {files[i][0]}")
@@ -107,28 +128,21 @@ st.subheader("02 · 분석 방식")
 mode = st.radio("어떻게 읽을까요?", ["ocr", "tuned"], format_func=MODE_LABELS.get, horizontal=True)
 st.caption({"tuned":"직접 편집한 스키마로 정보를 추출합니다. 파일당 1회 분석.",
             "ocr":"구조화된 필드 없이 포스터의 글자만 읽습니다. 파일당 1회 분석."}[mode])
-descriptions = {k: st.session_state[f"schema_{k}"] for k in FIELD_LABELS}
-with st.sidebar:
-    st.subheader("스키마 설정")
-    st.caption("추출할 항목마다 AI가 참고할 설명입니다.")
-    editing = st.toggle("수정 활성화", value=False, key="schema_editing", disabled=mode == "ocr")
-    can_edit = editing and mode == "tuned"
-    if mode == "ocr":
-        st.info("글자만 읽기에서는 스키마를 사용하지 않습니다.")
-    elif not can_edit:
-        st.caption("현재 설명으로 분석합니다. 설명을 바꾸려면 수정 활성화를 켜 주세요.")
-    else:
-        st.caption("한국어로 작성해도 됩니다. 수정 후 본문의 분석 실행을 눌러 적용하세요.")
-    st.button("기본 설명 불러오기", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True, disabled=not can_edit)
-    st.button("개선 예시 불러오기", on_click=preset, args=(TUNED_DESCRIPTIONS,), use_container_width=True, disabled=not can_edit)
-    for field, label in FIELD_LABELS.items():
-        with st.expander(label, expanded=False):
-            descriptions[field] = st.text_area(label, key=f"schema_{field}", height=140, max_chars=1000, disabled=not can_edit)
-    st.caption("수정을 잠가도 입력한 설명은 유지됩니다.")
+descriptions = dict(saved_schema)
 if mode == "tuned":
-    st.caption("필드별 설명은 왼쪽 스키마 설정에서 확인하세요. 휴대폰에서는 왼쪽 위 메뉴로 열 수 있습니다.")
-    changed = sum(descriptions[k].strip() != BASE_DESCRIPTIONS[k] for k in FIELD_LABELS)
-    st.caption(f"기본 설명과 다른 필드 {changed}개 · 값이 달라져도 정확도가 높아졌다는 뜻은 아닙니다. 원문을 확인하세요.")
+    with st.sidebar:
+        st.subheader("스키마 설정")
+        st.write("각 항목의 설명을 확인하고 필요하면 수정하세요.")
+        editing = st.toggle("수정 활성화", value=False, key="schema_editing")
+        st.caption("수정 중" if editing else "읽기 전용 · 수정을 켜면 설명을 바꿀 수 있어요.")
+        with st.expander("설명 예시 불러오기"):
+            st.button("기본 설명 불러오기", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True, disabled=not editing)
+            st.button("개선 예시 불러오기", on_click=preset, args=(TUNED_DESCRIPTIONS,), use_container_width=True, disabled=not editing)
+        for field, label in FIELD_LABELS.items():
+            with st.expander(label, expanded=False):
+                descriptions[field] = st.text_area(label, key=f"schema_{field}", height=140, max_chars=1000, disabled=not editing, on_change=remember_schema, args=(field,))
+        st.caption("수정을 잠가도 설명은 유지됩니다. 분석 실행을 눌러야 결과에 적용됩니다.")
+    st.info("왼쪽 스키마 설정에서 ‘수정 활성화’를 켜면 설명을 바꿀 수 있어요. 휴대폰에서는 왼쪽 위 메뉴를 여세요.")
 
 scope = st.radio("실행할 파일", ["모두", "하나만"], horizontal=True) if len(files) > 1 else "모두"
 targets = files
@@ -142,11 +156,11 @@ if files:
     for error in errors:
         st.warning(error)
 cooldown = max(0, 10 - int(time.time() - st.session_state.get("last_request", 0)))
-st.caption(f"이번 실행: 파일 {len(targets)}개 × {len(analysis_steps(mode))}회 = 최대 {len(targets)*len(analysis_steps(mode))}회 분석 요청. 새 스키마 준비에는 추가 시간이 걸릴 수 있습니다.")
+st.caption(f"선택한 파일 {len(targets)}개 · 파일당 1회 분석 · 실행 시 Azure 사용 요금이 발생할 수 있습니다.")
 if cooldown:
     st.caption(f"연속 요청 간격: 약 {cooldown}초 후 실행할 수 있습니다.")
 
-if st.button("분석 실행" if mode == "ocr" else "이 스키마로 분석 실행", type="primary", use_container_width=True, disabled=bool(errors) or not endpoint):
+if st.button(f"글자 읽기 · {len(targets)}개 파일" if mode == "ocr" else f"정보 추출 · {len(targets)}개 파일", type="primary", use_container_width=True, disabled=bool(errors) or not endpoint):
     if cooldown:
         st.warning("연속 실행을 잠시 기다려 주세요.")
     else:
@@ -192,31 +206,41 @@ st.subheader("03 · 결과 확인")
 if not records:
     st.info("분석하면 여기에 파일별 결과가 나타납니다. 이전 결과는 재분석해도 유지됩니다.")
     st.stop()
-st.caption("파일별 최근 10회 결과를 현재 접속 세션에서 보관합니다. 새로 접속하면 사라질 수 있습니다.")
-for digest, record in records.items():
-    latest = record["runs"][-1]
-    with st.expander(f'{record["name"]} · {MODE_LABELS[latest["mode"]]} · {len(record["runs"])}회 기록'):
-        if latest["error"]:
-            st.warning(latest["error"])
-        for step, result in latest["results"].items():
-            if step == "ocr":
-                st.text(extract_markdown(result) or "인식된 글자 없음")
+visible_records = {k: r for k, r in records.items() if any(run["mode"] == mode for run in r["runs"])}
+if not visible_records:
+    st.info(f"{MODE_LABELS[mode]} 결과가 아직 없습니다. 위에서 분석을 실행해 주세요.")
+    st.stop()
+if len(visible_records) > 1:
+    with st.expander("다른 포스터 결과도 함께 보기"):
+        for digest, record in visible_records.items():
+            latest = next(r for r in reversed(record["runs"]) if r["mode"] == mode)
+            st.markdown(f'**{record["name"]}**')
+            if latest["error"]:
+                st.warning(latest["error"])
+            if mode == "ocr":
+                st.text(extract_markdown(latest["results"].get("ocr", {})) or "인식된 글자 없음")
             else:
-                values, _ = normalize_fields(result)
-                st.caption("기본 스키마" if step == "basic" else "수정 스키마")
-                st.table([{"항목":label, "결과":values[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
-chosen = st.selectbox("자세히 볼 포스터", list(records), key="selected_record", format_func=lambda k: records[k]["name"])
+                summary, _ = normalize_fields(latest["results"].get("tuned", {}))
+                st.table([{"항목":label, "결과":summary[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
+if st.session_state.get("selected_record") not in visible_records:
+    st.session_state["selected_record"] = next(iter(visible_records))
+chosen = st.selectbox("확인할 포스터", list(visible_records), key="selected_record", format_func=lambda k: records[k]["name"])
 record = records[chosen]
-run_index = st.selectbox("실행 기록", list(reversed(range(len(record["runs"])))), format_func=lambda i: f'{i+1}번째 · {MODE_LABELS[record["runs"][i]["mode"]]} · {record["runs"][i]["seconds"]}초', key=f"run_{chosen}_{record['runs'][-1]['id']}")
+run_indices = [i for i in reversed(range(len(record["runs"]))) if record["runs"][i]["mode"] == mode]
+run_index = run_indices[0]
+with st.expander("이전 실행 기록 선택"):
+    st.caption("파일별 최근 10회 기록을 이 접속 세션에서 보관합니다.")
+    run_index = st.selectbox("실행 기록", run_indices, format_func=lambda i: f'{i+1}번째 · {MODE_LABELS[record["runs"][i]["mode"]]} · {record["runs"][i]["seconds"]}초', key=f"run_{chosen}_{mode}_{record['runs'][-1]['id']}")
 run = record["runs"][run_index]
 results = run["results"]
-st.caption("아래는 선택한 실행 당시의 결과입니다. 위 편집창의 수정은 다음 실행에 적용됩니다.")
+st.caption(f"선택한 결과: {record['name']} · {MODE_LABELS[run['mode']]} · 처리 시간 {run['seconds']}초")
 if run["error"]:
     st.warning(run["error"])
 if run["mode"] == "ocr":
     st.markdown("**추출 결과**")
     ocr_text = extract_markdown(results.get("ocr", {}))
     if ocr_text:
+        st.markdown("아래 글자는 포스터에 적힌 내용을 읽은 결과입니다.")
         st.text(ocr_text)
         st.download_button("추출한 글자 저장", ocr_text, file_name="poster-text.txt", mime="text/plain; charset=utf-8")
     elif not run["error"]:
@@ -233,7 +257,10 @@ with result_tab:
             st.text(extract_markdown(results["ocr"]) or "인식된 글자 없음")
     with st.expander("이 실행에 사용한 설명 · 원본 응답"):
         if run["descriptions"]:
-            st.table([{"필드":label, "설명":run["descriptions"][k]} for k,label in FIELD_LABELS.items()])
+            st.caption("현재 편집창이 아니라, 선택한 실행에 실제로 사용한 설명입니다.")
+            for k, label in FIELD_LABELS.items():
+                st.markdown(f"**{label}**")
+                st.write(run["descriptions"][k])
         st.caption("API 신뢰도는 정답률이 아닙니다. 제공된 값만 표시합니다.")
         st.json({FIELD_LABELS[k]:v for k,v in confidence.items() if v is not None})
         st.json(results)

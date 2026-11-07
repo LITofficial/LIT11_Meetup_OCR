@@ -19,7 +19,7 @@ from demo_logic import MODE_LABELS, analysis_steps, validate_inputs, comparison_
 from event_utils import normalize_fields, extract_markdown, source_regions, make_ics, make_deadline_ics
 
 load_dotenv()
-st.set_page_config(page_title="포스터를 일정으로 | LIT", page_icon="🗓️", layout="wide")
+st.set_page_config(page_title="포스터를 일정으로 | LIT", page_icon="🗓️", layout="wide", initial_sidebar_state="expanded")
 st.markdown("""
 <style>
 .block-container {max-width:1180px;padding-top:2rem;padding-bottom:3rem;}
@@ -104,21 +104,29 @@ if files:
             show_source(preview_data, preview_name, widget_key="input_source")
 
 st.subheader("02 · 분석 방식")
-mode = st.radio("어떻게 읽을까요?", list(MODE_LABELS), format_func=MODE_LABELS.get, horizontal=True)
+mode = st.radio("어떻게 읽을까요?", ["ocr", "tuned"], format_func=MODE_LABELS.get, horizontal=True)
 st.caption({"tuned":"직접 편집한 스키마로 정보를 추출합니다. 파일당 1회 분석.",
-            "compare":"OCR · 기본 스키마 · 직접 편집한 스키마를 같은 파일에 적용합니다. 파일당 3회 분석.",
             "ocr":"구조화된 필드 없이 포스터의 글자만 읽습니다. 파일당 1회 분석."}[mode])
 descriptions = {k: st.session_state[f"schema_{k}"] for k in FIELD_LABELS}
-if mode != "ocr":
-    with st.expander("스키마 편집 · 8개 필드를 각각 수정", expanded=True):
-        st.caption("필드는 추출할 항목이고, 설명은 그 항목을 찾는 기준입니다. 한국어로 작성해도 됩니다.")
-        a, b = st.columns(2)
-        a.button("기본 설명 불러오기", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True)
-        b.button("개선 예시 불러오기", on_click=preset, args=(TUNED_DESCRIPTIONS,), use_container_width=True)
-        columns = st.columns(2)
-        for index, (field, label) in enumerate(FIELD_LABELS.items()):
-            with columns[index % 2]:
-                descriptions[field] = st.text_area(label, key=f"schema_{field}", height=110, max_chars=1000)
+with st.sidebar:
+    st.subheader("스키마 설정")
+    st.caption("추출할 항목마다 AI가 참고할 설명입니다.")
+    editing = st.toggle("수정 활성화", value=False, key="schema_editing", disabled=mode == "ocr")
+    can_edit = editing and mode == "tuned"
+    if mode == "ocr":
+        st.info("글자만 읽기에서는 스키마를 사용하지 않습니다.")
+    elif not can_edit:
+        st.caption("현재 설명으로 분석합니다. 설명을 바꾸려면 수정 활성화를 켜 주세요.")
+    else:
+        st.caption("한국어로 작성해도 됩니다. 수정 후 본문의 분석 실행을 눌러 적용하세요.")
+    st.button("기본 설명 불러오기", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True, disabled=not can_edit)
+    st.button("개선 예시 불러오기", on_click=preset, args=(TUNED_DESCRIPTIONS,), use_container_width=True, disabled=not can_edit)
+    for field, label in FIELD_LABELS.items():
+        with st.expander(label, expanded=False):
+            descriptions[field] = st.text_area(label, key=f"schema_{field}", height=140, max_chars=1000, disabled=not can_edit)
+    st.caption("수정을 잠가도 입력한 설명은 유지됩니다.")
+if mode == "tuned":
+    st.caption("필드별 설명은 왼쪽 스키마 설정에서 확인하세요. 휴대폰에서는 왼쪽 위 메뉴로 열 수 있습니다.")
     changed = sum(descriptions[k].strip() != BASE_DESCRIPTIONS[k] for k in FIELD_LABELS)
     st.caption(f"기본 설명과 다른 필드 {changed}개 · 값이 달라져도 정확도가 높아졌다는 뜻은 아닙니다. 원문을 확인하세요.")
 
@@ -244,7 +252,7 @@ with evidence_tab:
     show_source(record["data"], record["name"], structured, field)
 with calendar_tab:
     if not structured:
-        st.info("스키마 튜닝 또는 비교 모드로 분석한 뒤 일정을 만들 수 있습니다.")
+        st.info("스키마 튜닝으로 분석한 뒤 일정을 만들 수 있습니다.")
     else:
         st.caption("원문과 대조한 뒤 저장하세요. 날짜는 연도를 포함해 입력하고, 여러 날짜 중 한 일정을 선택해 주세요.")
         st.caption("종료 시간이 없으면 캘린더 일정 길이는 기본 1시간입니다.")

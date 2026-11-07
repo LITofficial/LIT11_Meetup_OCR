@@ -213,6 +213,15 @@ results = run["results"]
 st.caption("아래는 선택한 실행 당시의 결과입니다. 위 편집창의 수정은 다음 실행에 적용됩니다.")
 if run["error"]:
     st.warning(run["error"])
+if run["mode"] == "ocr":
+    st.markdown("**추출 결과**")
+    ocr_text = extract_markdown(results.get("ocr", {}))
+    if ocr_text:
+        st.text(ocr_text)
+        st.download_button("추출한 글자 저장", ocr_text, file_name="poster-text.txt", mime="text/plain; charset=utf-8")
+    elif not run["error"]:
+        st.info("인식된 글자가 없습니다.")
+    st.stop()
 result_tab, diff_tab, evidence_tab, calendar_tab = st.tabs(["추출 결과", "변경 전후", "원문 · 근거", "일정 만들기"])
 structured = results.get("tuned") or results.get("basic")
 values, confidence = normalize_fields(structured or {})

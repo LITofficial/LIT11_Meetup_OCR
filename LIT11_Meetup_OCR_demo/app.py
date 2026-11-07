@@ -73,17 +73,18 @@ with left:
         help="개인정보가 없는 포스터나 공개 행사 안내문을 이용해 주세요.",
     )
     analysis_mode = st.radio(
-        "테스트 모드",
-        ["OCR만 확인 (1회 분석)", "기본 스키마 vs 개선 스키마 (3회 분석)"],
-        horizontal=False,
-        help="맞춤 스키마 비교는 OCR + 기본 분석기 + 개선 분석기를 각각 호출합니다.",
+        "분석 모드",
+        ["OCR만 확인 (1회)", "기본 스키마 vs 개선 스키마 (3회)", "개선 스키마만 분석 (1회)"],
+        help="비교 모드는 OCR과 두 스키마를 각각 분석합니다. 개선 스키마만 선택하면 한 번 분석합니다.",
     )
-    date_description = st.text_area(
-        "행사 날짜를 찾는 설명을 직접 수정해 보세요",
-        value=BASE_DESCRIPTIONS["event_date"],
-        max_chars=500,
-        help="참가자가 실제로 참석하는 날짜인지, 신청 마감일을 제외할지 적어 보세요.",
-    )
+    date_description = BASE_DESCRIPTIONS["event_date"]
+    if analysis_mode != "OCR만 확인 (1회)":
+        date_description = st.text_area(
+            "행사 날짜를 찾는 설명을 직접 수정해 보세요",
+            value=BASE_DESCRIPTIONS["event_date"], max_chars=500,
+            help="참가자가 실제로 참석하는 날짜인지, 신청 마감일을 제외할지 적어 보세요.",
+        )
+
 with right:
     upload = st.selectbox("확인할 포스터", uploads, format_func=lambda f: f.name) if uploads else None
     if upload is not None:
@@ -132,20 +133,21 @@ if run_clicked:
                 item_results = {}
                 try:
                     st.write(f"분석 중: {item.name}")
-                    item_results["ocr"] = client.analyze("prebuilt-read", data, item.name, MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]])
-                    if analysis_mode.startswith("기본 스키마"):
-                        for label, tuned in (("basic", False), ("tuned", True)):
+                    mime = MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]]
+                    if analysis_mode != "개선 스키마만 분석 (1회)":
+                        item_results["ocr"] = client.analyze("prebuilt-read", data, item.name, mime)
+                    if analysis_mode != "OCR만 확인 (1회)":
+                        pairs = (("basic", False), ("tuned", True)) if analysis_mode.startswith("기본") else (("tuned", True),)
+                        for label, tuned in pairs:
                             description = date_description.strip() if tuned else None
                             if tuned and not description:
                                 raise CUError("행사 날짜 필드 설명을 입력해 주세요.")
                             definition = make_analyzer_definition(tuned, description)
                             current_id = analyzer_id(tuned, description)
                             client.ensure_analyzer(current_id, definition)
-                            item_results[label] = client.analyze(current_id, data, item.name, MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]], model_deployments=deployments)
-                    fields, _ = normalize_fields(item_results.get("tuned", {}))
-                    batch_rows.append({"파일": item.name, "결과": "성공", "행사명": fields.get("event_title", ""), "신청 마감": fields.get("registration_deadline", ""), "마감 상태": deadline_status(fields.get("registration_deadline", ""))[0]})
+                            item_results[label] = client.analyze(current_id, data, item.name, mime, model_deployments=deployments)
                 except CUError as exc:
-                    batch_rows.append({"파일": item.name, "결과": f"실패: {exc}"})
+                    st.error(f"{item.name}: {exc}")
                 st.session_state["batch_results"][key] = item_results
             status.update(label="일괄 분석 완료", state="complete", expanded=False)
         st.session_state["batch_rows"] = batch_rows
@@ -153,28 +155,42 @@ if run_clicked:
     except CUError as exc:
         st.error(f"연결 설정 오류: {exc}")
 
-if st.session_state.get("batch_rows"):
-    st.subheader("일괄 분석 현황")
-    st.dataframe(st.session_state["batch_rows"], use_container_width=True, hide_index=True)
-    st.caption("파일을 선택하면 해당 포스터의 상세 결과를 확인할 수 있습니다. 같은 내용의 파일은 결과를 공유합니다.")
+if len(uploads or []) > 1 and st.session_state.get("batch_results"):
+    st.subheader("포스터별 분석 결과")
+    st.caption("각 결과를 펼쳐 확인하고, 위에서 포스터를 선택하면 상세 내용을 확인할 수 있습니다.")
+    for item in uploads:
+        item_key = hashlib.sha256(item.getvalue()).hexdigest()
+        item_result = st.session_state["batch_results"].get(item_key, {})
+        with st.expander(item.name):
+            if not item_result:
+                st.info("분석 결과가 없습니다.")
+            else:
+                if "ocr" in item_result:
+                    st.text(extract_markdown(item_result["ocr"]) or "OCR 결과 없음")
+                for label, title in (("basic", "기본 스키마"), ("tuned", "개선 스키마")):
+                    if label in item_result:
+                        values, _ = normalize_fields(item_result[label])
+                        st.write(title)
+                        st.json({FIELD_LABELS[k]: v for k, v in values.items() if k in FIELD_LABELS})
 
 results = st.session_state.get("results", {})
 if results:
     st.divider()
     st.subheader("2. Content Understanding 추출 결과")
     ocr_markdown = extract_markdown(results.get("ocr", {}))
-    with st.expander("🔤 OCR로 읽은 원문 (글자 인식)", expanded=True):
-        if ocr_markdown:
-            st.text_area("OCR 결과", ocr_markdown, height=220, label_visibility="collapsed")
-        else:
-            st.warning("OCR 문자가 반환되지 않았어요.")
+    if "ocr" in results:
+      with st.expander("🔤 OCR로 읽은 원문 (글자 인식)", expanded=True):
+          if ocr_markdown:
+              st.text_area("OCR 결과", ocr_markdown, height=220, label_visibility="collapsed")
+          else:
+              st.warning("OCR 문자가 반환되지 않았어요.")
 
     if "basic" in results or "tuned" in results:
         basic, basic_conf = normalize_fields(results.get("basic", {}))
         tuned, tuned_conf = normalize_fields(results.get("tuned", {}))
         st.caption("같은 포스터와 모델을 사용합니다. 오른쪽은 직접 입력한 행사 날짜 설명과 개선된 나머지 필드 설명을 사용합니다.")
         rows = [
-            {"필드": label, "기본 스키마": basic[name] or "—", "수정 스키마": tuned[name] or "—"}
+            {"필드": label, **({"기본 스키마": basic[name] or "—"} if "basic" in results else {}), "개선 스키마": tuned[name] or "—"}
             for name, label in FIELD_LABELS.items()
         ]
         st.table(rows)
@@ -183,7 +199,7 @@ if results:
             st.table([
                 {
                     "필드": FIELD_LABELS[name],
-                    "기본 신뢰도": f"{basic_conf[name]:.1%}" if basic_conf[name] is not None else "—",
+                    **({"기본 신뢰도": f"{basic_conf[name]:.1%}" if basic_conf[name] is not None else "—"} if "basic" in results else {}),
                     "개선 신뢰도": f"{tuned_conf[name]:.1%}" if tuned_conf[name] is not None else "—",
                 }
                 for name in FIELD_LABELS

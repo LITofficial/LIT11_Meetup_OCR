@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 import streamlit as st
 from dotenv import load_dotenv
 
-from analyzer_schemas import FIELD_LABELS, analyzer_id, make_analyzer_definition
+from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, analyzer_id, make_analyzer_definition
 from cu_client import CUClient, CUError
 from event_utils import (deadline_status, extract_markdown, make_deadline_ics, make_ics,
                          normalize_fields, parse_explicit_date, source_regions)
@@ -54,50 +54,14 @@ def build_client() -> CUClient:
     return CUClient(endpoint=endpoint, api_key=api_key)
 
 
+# Credentials stay on the server; visitors cannot alter shared Azure settings.
+endpoint = os.getenv("AZURE_CU_ENDPOINT", "")
+api_key = os.getenv("AZURE_CU_KEY", "")
+completion_deployment = os.getenv("AZURE_CU_COMPLETION_DEPLOYMENT", "gpt-4.1-mini")
+embedding_deployment = os.getenv("AZURE_CU_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 with st.sidebar:
-    st.header("⚙️ Azure 연결")
-    endpoint = st.text_input(
-        "Foundry 리소스 엔드포인트",
-        value=os.getenv(
-            "AZURE_CU_ENDPOINT",
-            "https://plant88588672-6475-resource.cognitiveservices.azure.com",
-        ),
-        help="Japan East에 있는 Microsoft Foundry 리소스의 HTTPS 주소",
-    )
-    api_key = st.text_input(
-        "API 키 (선택)",
-        value=os.getenv("AZURE_CU_KEY", ""),
-        type="password",
-        help="비워 두면 az login 또는 다른 DefaultAzureCredential 인증을 시도합니다.",
-    )
-    completion_deployment = st.text_input(
-        "Chat 모델 배포 이름",
-        value=os.getenv("AZURE_CU_COMPLETION_DEPLOYMENT", "gpt-4.1-mini"),
-    )
-    embedding_deployment = st.text_input(
-        "Embedding 배포 이름",
-        value=os.getenv("AZURE_CU_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"),
-    )
-    st.caption("API 키는 이 앱에서 GitHub나 파일로 저장하지 않아요.")
-
-    with st.expander("분석기 초기 설정 (최초 1회)", expanded=False):
-        st.write(
-            "기존 배포 두 개를 CU 기본 모델로 연결하고, "
-            "서로 다른 스키마를 가진 분석기 2개를 Azure 리소스에 생성합니다. "
-            "기존의 다른 모델 연결은 지우지 않습니다."
-        )
-        if st.button("Azure 분석기 준비", use_container_width=True):
-            try:
-                client = build_client()
-                with st.spinner("모델 연결 및 분석기 준비 중 (최대 약 2분)…"):
-                    client.configure_model_defaults(completion_deployment, embedding_deployment)
-                    for tuned in (False, True):
-                        client.ensure_analyzer(analyzer_id(tuned), make_analyzer_definition(tuned))
-                st.session_state["analyzers_ready"] = True
-                st.success("기본·개선 분석기 준비 완료")
-            except (CUError, ValueError) as exc:
-                st.error(str(exc))
-    st.info("OCR 전용 `prebuilt-read`는 모델 연결 없이도 이용할 수 있습니다.")
+    st.info("Azure 연결은 서버 관리자가 설정합니다.")
+    st.caption("스키마 변경 후 재분석할 때마다 Azure 요청이 발생합니다.")
 
 st.subheader("1. 행사 포스터 업로드")
 left, right = st.columns([1, 1], gap="large")
@@ -113,6 +77,12 @@ with left:
         ["OCR만 확인 (1회 분석)", "기본 스키마 vs 개선 스키마 (3회 분석)"],
         horizontal=False,
         help="맞춤 스키마 비교는 OCR + 기본 분석기 + 개선 분석기를 각각 호출합니다.",
+    )
+    date_description = st.text_area(
+        "행사 날짜를 찾는 설명을 직접 수정해 보세요",
+        value=BASE_DESCRIPTIONS["event_date"],
+        max_chars=500,
+        help="참가자가 실제로 참석하는 날짜인지, 신청 마감일을 제외할지 적어 보세요.",
     )
 with right:
     upload = st.selectbox("확인할 포스터", uploads, format_func=lambda f: f.name) if uploads else None
@@ -165,7 +135,13 @@ if run_clicked:
                     item_results["ocr"] = client.analyze("prebuilt-read", data, item.name, MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]])
                     if analysis_mode.startswith("기본 스키마"):
                         for label, tuned in (("basic", False), ("tuned", True)):
-                            item_results[label] = client.analyze(analyzer_id(tuned), data, item.name, MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]], model_deployments=deployments)
+                            description = date_description.strip() if tuned else None
+                            if tuned and not description:
+                                raise CUError("행사 날짜 필드 설명을 입력해 주세요.")
+                            definition = make_analyzer_definition(tuned, description)
+                            current_id = analyzer_id(tuned, description)
+                            client.ensure_analyzer(current_id, definition)
+                            item_results[label] = client.analyze(current_id, data, item.name, MIME_BY_SUFFIX[os.path.splitext(item.name.lower())[1]], model_deployments=deployments)
                     fields, _ = normalize_fields(item_results.get("tuned", {}))
                     batch_rows.append({"파일": item.name, "결과": "성공", "행사명": fields.get("event_title", ""), "신청 마감": fields.get("registration_deadline", ""), "마감 상태": deadline_status(fields.get("registration_deadline", ""))[0]})
                 except CUError as exc:
@@ -196,9 +172,9 @@ if results:
     if "basic" in results or "tuned" in results:
         basic, basic_conf = normalize_fields(results.get("basic", {}))
         tuned, tuned_conf = normalize_fields(results.get("tuned", {}))
-        st.caption("같은 포스터와 같은 모델을 사용하며, **필드 설명(스키마)만** 다릅니다.")
+        st.caption("같은 포스터와 모델을 사용합니다. 오른쪽은 직접 입력한 행사 날짜 설명과 개선된 나머지 필드 설명을 사용합니다.")
         rows = [
-            {"필드": label, "기본 스키마": basic[name] or "—", "개선 스키마": tuned[name] or "—"}
+            {"필드": label, "기본 스키마": basic[name] or "—", "수정 스키마": tuned[name] or "—"}
             for name, label in FIELD_LABELS.items()
         ]
         st.table(rows)
@@ -321,3 +297,4 @@ if results:
 
 st.divider()
 st.caption("분석 요청은 Azure 사용량에 따라 요금이 발생할 수 있습니다. 추출된 일정은 자동 등록되지 않으며 사용자가 검토하고 다운로드합니다.")
+

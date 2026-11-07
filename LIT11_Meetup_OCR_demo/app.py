@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from html import escape
 import json
 import os
 import time
@@ -30,6 +31,7 @@ st.markdown("""
 [data-testid="stMain"] p,[data-testid="stSidebar"] p {line-height:1.65;overflow-wrap:anywhere;}
 [data-testid="stCaptionContainer"] p {font-size:0.9rem;color:#475569;}
 [data-testid="stText"] pre {white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:1rem;line-height:1.75;}
+.ocr-output {background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;border-radius:12px;padding:20px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:1rem;line-height:1.8;margin:12px 0 20px;}
 [data-testid="stTextArea"] textarea {font-size:1rem;line-height:1.6;}
 [data-testid="stTextInput"] input {font-size:1rem;}
 [data-testid="stButton"] button,[data-testid="stDownloadButton"] button,[data-testid="stFormSubmitButton"] button {min-height:44px;}
@@ -67,6 +69,9 @@ def preset(values):
     for field in FIELD_LABELS:
         saved_schema[field] = values[field]
         st.session_state[f"schema_{field}"] = values[field]
+
+def show_ocr_text(text):
+    st.markdown(f'<div class="ocr-output" role="region" aria-label="OCR 추출 결과">{escape(text)}</div>', unsafe_allow_html=True)
 
 def show_source(data, name, result=None, field=None, widget_key="source"):
     if Path(name).suffix.lower() == ".pdf":
@@ -223,7 +228,7 @@ if len(visible_records) > 1:
             if latest["error"]:
                 st.warning(latest["error"])
             if mode == "ocr":
-                st.text(extract_markdown(latest["results"].get("ocr", {})) or "인식된 글자 없음")
+                show_ocr_text(extract_markdown(latest["results"].get("ocr", {})) or "인식된 글자 없음")
             else:
                 summary, _ = normalize_fields(latest["results"].get("tuned", {}))
                 st.table([{"항목":label, "결과":summary[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
@@ -246,7 +251,7 @@ if run["mode"] == "ocr":
     ocr_text = extract_markdown(results.get("ocr", {}))
     if ocr_text:
         st.markdown("아래 글자는 포스터에 적힌 내용을 읽은 결과입니다.")
-        st.text(ocr_text)
+        show_ocr_text(ocr_text)
         st.download_button("추출한 글자 저장", ocr_text, file_name="poster-text.txt", mime="text/plain; charset=utf-8")
     elif not run["error"]:
         st.info("인식된 글자가 없습니다.")
@@ -259,7 +264,7 @@ with result_tab:
         st.table([{"항목": label, "결과":values[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
     if "ocr" in results:
         with st.expander("OCR 원문", expanded=not bool(structured)):
-            st.text(extract_markdown(results["ocr"]) or "인식된 글자 없음")
+            show_ocr_text(extract_markdown(results["ocr"]) or "인식된 글자 없음")
     with st.expander("이 실행에 사용한 설명 · 원본 응답"):
         if run["descriptions"]:
             st.caption("현재 편집창이 아니라, 선택한 실행에 실제로 사용한 설명입니다.")

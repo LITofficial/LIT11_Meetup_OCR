@@ -40,6 +40,8 @@ TUNED_DESCRIPTIONS = {
     "event_date": (
         "Only the date on which attendees should GO TO or JOIN the event. "
         "Never use an application deadline, registration period, announcement date, or application opening date. "
+        "For a contest, 공모기간, 접수기간 and 모집기간 describe submission/application periods, not attendance dates. "
+        "If only those periods are printed, leave event_date empty and use registration_deadline for their closing date. "
         "If multiple sessions are listed, preserve the entire date range as written. "
         "If the year is missing, preserve month/day WITHOUT inventing a year. "
         "Return an empty value if no event date is stated."
@@ -59,7 +61,10 @@ TUNED_DESCRIPTIONS = {
     ),
     "registration_deadline": (
         "Last day to APPLY or REGISTER. This must remain separate from event_date. "
-        "If the year is absent, do not infer one. Return empty if not printed."
+        "For contests, also extract the closing/end date of 공모기간, 접수기간, 모집기간 or 응모기간, "
+        "even without the word 마감. For example, 공모기간 2025.7.16 ~ 9.15 means the deadline is 2025-09-15. "
+        "A year explicitly shared by that date range applies to its end date. "
+        "If the year is absent from the entire range, do not infer one. Return empty if no deadline or application period is printed."
     ),
     "registration_url": (
         "Exact visible link for applying to the event; never invent a URL from a QR image. "

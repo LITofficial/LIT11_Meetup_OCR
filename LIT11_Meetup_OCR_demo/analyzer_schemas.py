@@ -71,8 +71,10 @@ TUNED_DESCRIPTIONS = {
 }
 
 
-def make_analyzer_definition(tuned: bool) -> dict:
-    descriptions = TUNED_DESCRIPTIONS if tuned else BASE_DESCRIPTIONS
+def make_analyzer_definition(tuned: bool, event_date_description: str | None = None) -> dict:
+    descriptions = (TUNED_DESCRIPTIONS if tuned else BASE_DESCRIPTIONS).copy()
+    if event_date_description is not None:
+        descriptions["event_date"] = event_date_description
     return {
         "description": (
             "LIT Meetup event poster extraction: tuned field instructions"
@@ -103,11 +105,12 @@ def make_analyzer_definition(tuned: bool) -> dict:
     }
 
 
-def analyzer_id(tuned: bool) -> str:
+def analyzer_id(tuned: bool, event_date_description: str | None = None) -> str:
     """Content-addressed ID avoids accidentally replacing an unrelated analyzer."""
-    definition = make_analyzer_definition(tuned)
+    definition = make_analyzer_definition(tuned, event_date_description)
     digest = hashlib.sha256(
         json.dumps(definition, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()[:10]
     kind = "tuned" if tuned else "basic"
     return f"lit_meetup_{kind}_{digest}"
+

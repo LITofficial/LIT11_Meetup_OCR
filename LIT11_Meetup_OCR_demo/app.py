@@ -15,7 +15,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, UnidentifiedImageError
-from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, TUNED_DESCRIPTIONS, analyzer_id, make_analyzer_definition
+from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, analyzer_id, make_analyzer_definition
 from cu_client import CUClient, CUError
 from demo_logic import MODE_LABELS, analysis_steps, validate_inputs, comparison_rows, file_options, history_options
 from event_utils import normalize_fields, extract_markdown, source_regions, make_ics, make_deadline_ics
@@ -163,9 +163,7 @@ if mode == "tuned":
         st.write("각 항목의 설명을 확인하고 필요하면 수정하세요.")
         editing = st.toggle("수정 활성화", value=False, key="schema_editing")
         st.caption("수정 중" if editing else "읽기 전용 · 수정을 켜면 설명을 바꿀 수 있어요.")
-        with st.expander("설명 예시 불러오기"):
-            st.button("기본 설명 불러오기", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True, disabled=not editing)
-            st.button("개선 예시 불러오기", on_click=preset, args=(TUNED_DESCRIPTIONS,), use_container_width=True, disabled=not editing)
+        st.button("기본 설명으로 초기화", on_click=preset, args=(BASE_DESCRIPTIONS,), use_container_width=True, disabled=not editing)
         for field, label in FIELD_LABELS.items():
             with st.expander(label, expanded=False):
                 descriptions[field] = st.text_area(label, key=f"schema_{field}", height=140, max_chars=1000, disabled=not editing, on_change=remember_schema, args=(field,))

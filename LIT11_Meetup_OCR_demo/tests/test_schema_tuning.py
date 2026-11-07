@@ -1,8 +1,14 @@
 import unittest
-from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, TUNED_DESCRIPTIONS, make_analyzer_definition, analyzer_id
+from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, make_analyzer_definition, analyzer_id
 from demo_logic import analysis_steps, validate_inputs, comparison_rows
 
 class SchemaTuningTests(unittest.TestCase):
+    def test_one_base_schema_is_used_for_all_legacy_callers(self):
+        for flag in (False, True):
+            fields = make_analyzer_definition(flag)["fieldSchema"]["fields"]
+            self.assertEqual({k: v["description"] for k,v in fields.items()}, BASE_DESCRIPTIONS)
+        self.assertEqual(analyzer_id(False), analyzer_id(True))
+
     def test_every_field_can_be_tuned_without_changing_other_fields(self):
         original = make_analyzer_definition(True)["fieldSchema"]["fields"]
         baseline_id = analyzer_id(True)
@@ -18,7 +24,7 @@ class SchemaTuningTests(unittest.TestCase):
         self.assertEqual(original, make_analyzer_definition(True)["fieldSchema"]["fields"])
 
     def test_analyzer_id_ignores_mapping_order_and_surrounding_whitespace(self):
-        first = dict(TUNED_DESCRIPTIONS)
+        first = dict(BASE_DESCRIPTIONS)
         second = {k: " " + v + " " for k,v in reversed(list(first.items()))}
         self.assertEqual(analyzer_id(True, descriptions_override=first), analyzer_id(True, descriptions_override=second))
 

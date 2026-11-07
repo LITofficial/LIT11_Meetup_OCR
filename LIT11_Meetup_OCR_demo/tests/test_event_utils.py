@@ -9,11 +9,12 @@ from event_utils import (deadline_status, make_deadline_ics, make_ics, normalize
 class AnalyzerSchemaTests(unittest.TestCase):
     def test_same_models_different_schema(self):
         basic = make_analyzer_definition(False)
-        tuned = make_analyzer_definition(True)
+        tuned = make_analyzer_definition(True, descriptions_override={"event_date": "실제 행사 참석 날짜만 추출한다."})
         self.assertEqual(basic["models"], MODEL_NAMES)
         self.assertEqual(tuned["models"], MODEL_NAMES)
         self.assertNotEqual(basic["fieldSchema"]["fields"], tuned["fieldSchema"]["fields"])
-        self.assertNotEqual(analyzer_id(False), analyzer_id(True))
+        self.assertEqual(analyzer_id(False), analyzer_id(True))
+        self.assertNotEqual(analyzer_id(False), analyzer_id(True, descriptions_override={"event_date": "실제 행사 참석 날짜만 추출한다."}))
         self.assertEqual(analyzer_id(True), analyzer_id(True))
 
 

@@ -1,7 +1,16 @@
 """Pure helpers for request planning, validation and result comparison."""
 from analyzer_schemas import FIELD_LABELS
+import hashlib
 
 MODE_LABELS = {"tuned": "스키마 튜닝", "compare": "기본 · 수정 비교", "ocr": "글자만 읽기"}
+
+def file_options(files):
+    """Selection follows file identity, not a position in a changing list."""
+    return {hashlib.sha256(data).hexdigest() + ":" + name: (name, data) for name, data in files}
+
+def history_options(runs):
+    """Keep every mode, newest first, keyed by stable run IDs."""
+    return {run["id"]: run for run in reversed(runs)}
 
 def analysis_steps(mode):
     return {"tuned": ("tuned",), "compare": ("ocr", "basic", "tuned"), "ocr": ("ocr",)}[mode]

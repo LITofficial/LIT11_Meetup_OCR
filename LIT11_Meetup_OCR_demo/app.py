@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, TUNED_DESCRIPTIONS, analyzer_id, make_analyzer_definition
 from cu_client import CUClient, CUError
-from demo_logic import MODE_LABELS, analysis_steps, validate_inputs, comparison_rows
+from demo_logic import MODE_LABELS, analysis_steps, validate_inputs, comparison_rows, file_options, history_options
 from event_utils import normalize_fields, extract_markdown, source_regions, make_ics, make_deadline_ics
 
 load_dotenv()
@@ -73,6 +73,9 @@ def preset(values):
 def show_ocr_text(text):
     st.markdown(f'<div class="ocr-output" role="region" aria-label="OCR 추출 결과">{escape(text)}</div>', unsafe_allow_html=True)
 
+def remember_sample(name):
+    st.session_state["sample_choices"][name] = st.session_state[f"sample_{name}"]
+
 def show_source(data, name, result=None, field=None, widget_key="source"):
     if Path(name).suffix.lower() == ".pdf":
         st.info("PDF 원본은 내려받아 확인할 수 있습니다.")
@@ -104,7 +107,7 @@ def show_source(data, name, result=None, field=None, widget_key="source"):
 st.subheader("01 · 자료 선택")
 input_col, tip_col = st.columns([3, 2], gap="large")
 with input_col:
-    source_type = st.radio("자료 가져오기", ["내 파일", "예제 포스터"], horizontal=True)
+    source_type = st.radio("자료 가져오기", ["내 파일", "예제 포스터"], horizontal=True, key="input_source_type")
     files = []
     if source_type == "내 파일":
         uploads = st.file_uploader("포스터를 놓거나 파일을 선택하세요", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
@@ -117,7 +120,14 @@ with input_col:
             "lit6.jpg": "2026 LIT 6월 Meetup",
         }
         available = [sample_dir / name for name in sample_labels if (sample_dir / name).is_file()]
-        selected = st.multiselect("예제 선택", available, default=available[:1], format_func=lambda p: sample_labels[p.name])
+        choices = st.session_state.setdefault("sample_choices", {name: i == 0 for i, name in enumerate(sample_labels)})
+        st.write("분석할 예제를 선택하세요. 여러 개 선택할 수 있습니다.")
+        selected = []
+        for sample in available:
+            widget_key = f"sample_{sample.name}"
+            st.session_state.setdefault(widget_key, choices[sample.name])
+            if st.checkbox(sample_labels[sample.name], key=widget_key, on_change=remember_sample, args=(sample.name,)):
+                selected.append(sample)
         files = [(p.name, p.read_bytes()) for p in selected]
         if not available:
             st.info("예제 이미지가 없습니다. samples 폴더에 knu_slogan.png, lit11.jpg, lit6.jpg를 넣어 주세요. 내 파일에서 직접 올려도 분석할 수 있습니다.")
@@ -129,8 +139,11 @@ with tip_col:
         st.caption("스키마는 행사 날짜·장소처럼 AI가 찾아야 할 항목과 그 설명입니다.")
 if files:
     with st.expander("선택한 원본 미리보기"):
-        preview_index = st.selectbox("미리 볼 파일", range(len(files)), format_func=lambda i: f"{i+1}. {files[i][0]}")
-        preview_name, preview_data = files[preview_index]
+        previews = file_options(files)
+        if st.session_state.get("preview_file") not in previews:
+            st.session_state["preview_file"] = next(iter(previews))
+        preview_id = st.selectbox("미리 볼 파일", list(previews), format_func=lambda k: previews[k][0], key="preview_file")
+        preview_name, preview_data = previews[preview_id]
         if len(preview_data) <= 10 * 1024 * 1024:
             show_source(preview_data, preview_name, widget_key="input_source")
 
@@ -157,8 +170,11 @@ if mode == "tuned":
 scope = st.radio("실행할 파일", ["모두", "하나만"], horizontal=True) if len(files) > 1 else "모두"
 targets = files
 if scope == "하나만":
-    target_index = st.selectbox("실행 대상", range(len(files)), format_func=lambda i: f"{i+1}. {files[i][0]}")
-    targets = [files[target_index]]
+    target_options = file_options(files)
+    if st.session_state.get("target_file") not in target_options:
+        st.session_state["target_file"] = next(iter(target_options))
+    target_id = st.selectbox("실행 대상", list(target_options), format_func=lambda k: target_options[k][0], key="target_file")
+    targets = [target_options[target_id]]
 errors = validate_inputs(targets, descriptions, mode)
 if not endpoint:
     st.info("현재 Azure 연결이 설정되지 않았습니다. 화면을 살펴볼 수 있으며, 실제 분석에는 서버 연결이 필요합니다.")
@@ -209,6 +225,7 @@ if st.button(f"글자 읽기 · {len(targets)}개 파일" if mode == "ocr" else 
                 record["runs"].append(run)
                 record["runs"] = record["runs"][-10:]
                 st.session_state["selected_record"] = digest
+                st.session_state[f"history_{digest}"] = run["id"]
             status.update(label="일부 분석 실패 · 결과에서 확인해 주세요" if failures else "분석 완료", state="error" if failures else "complete", expanded=False)
 
 st.divider()
@@ -216,32 +233,36 @@ st.subheader("03 · 결과 확인")
 if not records:
     st.info("분석하면 여기에 파일별 결과가 나타납니다. 이전 결과는 재분석해도 유지됩니다.")
     st.stop()
-visible_records = {k: r for k, r in records.items() if any(run["mode"] == mode for run in r["runs"])}
-if not visible_records:
-    st.info(f"{MODE_LABELS[mode]} 결과가 아직 없습니다. 위에서 분석을 실행해 주세요.")
-    st.stop()
-if len(visible_records) > 1:
+if len(records) > 1:
     with st.expander("다른 포스터 결과도 함께 보기"):
-        for digest, record in visible_records.items():
-            latest = next(r for r in reversed(record["runs"]) if r["mode"] == mode)
-            st.markdown(f'**{record["name"]}**')
+        for digest, record in records.items():
+            latest = record["runs"][-1]
+            st.markdown(f'**{record["name"]} · {MODE_LABELS[latest["mode"]]}**')
             if latest["error"]:
                 st.warning(latest["error"])
-            if mode == "ocr":
+            if latest["mode"] == "ocr":
                 show_ocr_text(extract_markdown(latest["results"].get("ocr", {})) or "인식된 글자 없음")
             else:
                 summary, _ = normalize_fields(latest["results"].get("tuned", {}))
                 st.table([{"항목":label, "결과":summary[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
-if st.session_state.get("selected_record") not in visible_records:
-    st.session_state["selected_record"] = next(iter(visible_records))
-chosen = st.selectbox("확인할 포스터", list(visible_records), key="selected_record", format_func=lambda k: records[k]["name"])
+if st.session_state.get("selected_record") not in records:
+    st.session_state["selected_record"] = next(iter(records))
+chosen = st.selectbox("확인할 포스터", list(records), key="selected_record", format_func=lambda k: records[k]["name"])
 record = records[chosen]
-run_indices = [i for i in reversed(range(len(record["runs"]))) if record["runs"][i]["mode"] == mode]
-run_index = run_indices[0]
-with st.expander("이전 실행 기록 선택"):
-    st.caption("파일별 최근 10회 기록을 이 접속 세션에서 보관합니다.")
-    run_index = st.selectbox("실행 기록", run_indices, format_func=lambda i: f'{i+1}번째 · {MODE_LABELS[record["runs"][i]["mode"]]} · {record["runs"][i]["seconds"]}초', key=f"run_{chosen}_{mode}_{record['runs'][-1]['id']}")
-run = record["runs"][run_index]
+runs_by_id = history_options(record["runs"])
+history_key = f"history_{chosen}"
+if st.session_state.get(history_key) not in runs_by_id:
+    st.session_state[history_key] = next(iter(runs_by_id))
+st.caption("OCR과 스키마 튜닝 기록을 함께 표시합니다. 선택한 기록에 맞는 결과 화면이 열립니다.")
+selected_run_id = st.selectbox(
+    "실행 기록",
+    list(runs_by_id),
+    format_func=lambda rid: f'{next(i+1 for i,r in enumerate(record["runs"]) if r["id"] == rid)}번째 · {MODE_LABELS[runs_by_id[rid]["mode"]]} · {runs_by_id[rid]["seconds"]}초',
+    key=history_key,
+)
+st.caption("파일별 최근 10회 기록을 이 접속 세션에서 보관합니다.")
+run = runs_by_id[selected_run_id]
+run_index = next(i for i, item in enumerate(record["runs"]) if item["id"] == selected_run_id)
 results = run["results"]
 st.caption(f"선택한 결과: {record['name']} · {MODE_LABELS[run['mode']]} · 처리 시간 {run['seconds']}초")
 if run["error"]:

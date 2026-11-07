@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from html import escape
+from ui_tables import TABLE_CSS, table_html
 import json
 import os
 import time
@@ -21,6 +22,7 @@ from event_utils import normalize_fields, extract_markdown, source_regions, make
 
 load_dotenv()
 st.set_page_config(page_title="포스터를 일정으로 | LIT", page_icon="🗓️", layout="wide", initial_sidebar_state="auto")
+st.markdown(f"<style>{TABLE_CSS}</style>", unsafe_allow_html=True)
 st.markdown("""
 <style>
 .block-container {max-width:1100px;padding-top:2rem;padding-bottom:3rem;}
@@ -38,7 +40,7 @@ st.markdown("""
 [data-testid="stRadio"] label {min-height:44px;align-items:center;}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible {outline:3px solid #1d4ed8;outline-offset:3px;}
 div[data-testid="stExpander"] {border-radius:12px;}
-[data-testid="stTable"] {overflow-x:auto;}
+
 @media(max-width:640px){
   .block-container{padding:1rem;}
   .hero{padding:20px;}.hero h1{font-size:1.6rem;}
@@ -69,6 +71,9 @@ def preset(values):
     for field in FIELD_LABELS:
         saved_schema[field] = values[field]
         st.session_state[f"schema_{field}"] = values[field]
+
+def show_table(rows):
+    st.markdown(table_html(rows), unsafe_allow_html=True)
 
 def show_ocr_text(text):
     st.markdown(f'<div class="ocr-output" role="region" aria-label="OCR 추출 결과">{escape(text)}</div>', unsafe_allow_html=True)
@@ -244,7 +249,7 @@ if len(records) > 1:
                 show_ocr_text(extract_markdown(latest["results"].get("ocr", {})) or "인식된 글자 없음")
             else:
                 summary, _ = normalize_fields(latest["results"].get("tuned", {}))
-                st.table([{"항목":label, "결과":summary[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
+                show_table([{"항목":label, "결과":summary[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
 if st.session_state.get("selected_record") not in records:
     st.session_state["selected_record"] = next(iter(records))
 chosen = st.selectbox("확인할 포스터", list(records), key="selected_record", format_func=lambda k: records[k]["name"])
@@ -282,7 +287,7 @@ structured = results.get("tuned") or results.get("basic")
 values, confidence = normalize_fields(structured or {})
 with result_tab:
     if structured:
-        st.table([{"항목": label, "결과":values[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
+        show_table([{"항목": label, "결과":values[k] or "정보 없음"} for k,label in FIELD_LABELS.items()])
     if "ocr" in results:
         with st.expander("OCR 원문", expanded=not bool(structured)):
             show_ocr_text(extract_markdown(results["ocr"]) or "인식된 글자 없음")
@@ -299,16 +304,16 @@ with result_tab:
 with diff_tab:
     if "basic" in results and "tuned" in results:
         st.markdown("**같은 실행의 기본 → 수정 스키마**")
-        st.table(comparison_rows(normalize_fields(results["basic"])[0], normalize_fields(results["tuned"])[0]))
+        show_table(comparison_rows(normalize_fields(results["basic"])[0], normalize_fields(results["tuned"])[0]))
     previous = [i for i in range(run_index) if "tuned" in record["runs"][i]["results"]]
     if "tuned" in results and previous:
         prev_index = st.selectbox("비교할 이전 실행", list(reversed(previous)), format_func=lambda i: f"{i+1}번째 실행")
         prev = record["runs"][prev_index]
         st.markdown("**이전 실행 → 선택한 실행**")
-        st.table(comparison_rows(normalize_fields(prev["results"]["tuned"])[0], values))
+        show_table(comparison_rows(normalize_fields(prev["results"]["tuned"])[0], values))
         changed_rows = [{"필드":label, "이전 설명":prev["descriptions"].get(k,""), "현재 설명":run["descriptions"].get(k,"")} for k,label in FIELD_LABELS.items() if prev["descriptions"].get(k) != run["descriptions"].get(k)]
         if changed_rows:
-            st.table(changed_rows)
+            show_table(changed_rows)
         else:
             st.info("설명은 동일합니다. 동일한 설정으로 재실행해도 모델 결과가 달라질 수 있습니다.")
     elif not ("basic" in results and "tuned" in results):

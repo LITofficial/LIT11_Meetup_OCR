@@ -71,10 +71,18 @@ TUNED_DESCRIPTIONS = {
 }
 
 
-def make_analyzer_definition(tuned: bool, event_date_description: str | None = None) -> dict:
+def make_analyzer_definition(tuned: bool, event_date_description: str | None = None, *, descriptions_override: dict[str, str] | None = None) -> dict:
     descriptions = (TUNED_DESCRIPTIONS if tuned else BASE_DESCRIPTIONS).copy()
     if event_date_description is not None:
         descriptions["event_date"] = event_date_description
+    if descriptions_override is not None:
+        unknown = set(descriptions_override) - set(FIELD_LABELS)
+        if unknown:
+            raise ValueError("알 수 없는 필드: " + ", ".join(sorted(unknown)))
+        for field, value in descriptions_override.items():
+            if not isinstance(value, str) or not value.strip() or len(value) > 1000:
+                raise ValueError(f"{FIELD_LABELS[field]} 설명은 1~1000자로 입력해 주세요.")
+            descriptions[field] = value.strip()
     return {
         "description": (
             "LIT Meetup event poster extraction: tuned field instructions"
@@ -105,9 +113,9 @@ def make_analyzer_definition(tuned: bool, event_date_description: str | None = N
     }
 
 
-def analyzer_id(tuned: bool, event_date_description: str | None = None) -> str:
+def analyzer_id(tuned: bool, event_date_description: str | None = None, *, descriptions_override: dict[str, str] | None = None) -> str:
     """Content-addressed ID avoids accidentally replacing an unrelated analyzer."""
-    definition = make_analyzer_definition(tuned, event_date_description)
+    definition = make_analyzer_definition(tuned, event_date_description, descriptions_override=descriptions_override)
     digest = hashlib.sha256(
         json.dumps(definition, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()[:10]

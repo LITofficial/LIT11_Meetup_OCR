@@ -3,6 +3,21 @@ from analyzer_schemas import FIELD_LABELS, BASE_DESCRIPTIONS, make_analyzer_defi
 from demo_logic import analysis_steps, validate_inputs, comparison_rows
 
 class SchemaTuningTests(unittest.TestCase):
+    def test_deadline_generation_and_description_only_comparison(self):
+        overrides = {"registration_deadline": "공모기간 또는 접수기간에서 마지막 날짜만 YYYY-MM-DD 형식으로 반환한다."}
+        before = make_analyzer_definition(True)["fieldSchema"]["fields"]
+        after = make_analyzer_definition(True, descriptions_override=overrides)["fieldSchema"]["fields"]
+        self.assertEqual(before["registration_deadline"]["method"], "generate")
+        self.assertEqual(before["registration_deadline"]["type"], "string")
+        for key in FIELD_LABELS:
+            self.assertEqual(before[key]["method"], after[key]["method"])
+            self.assertEqual(before[key]["type"], after[key]["type"])
+            self.assertTrue(before[key]["estimateSourceAndConfidence"])
+            if key != "registration_deadline":
+                self.assertEqual(before[key]["method"], "extract")
+                self.assertEqual(before[key], after[key])
+        self.assertNotEqual(analyzer_id(True), analyzer_id(True, descriptions_override=overrides))
+
     def test_one_base_schema_is_used_for_all_legacy_callers(self):
         for flag in (False, True):
             fields = make_analyzer_definition(flag)["fieldSchema"]["fields"]

@@ -202,6 +202,7 @@ if st.button(f"글자 읽기 · {len(targets)}개 파일" if mode == "ocr" else 
                 digest = hashlib.sha256(data).hexdigest()
                 record = records.setdefault(digest, {"name":name, "data":data, "runs":[]})
                 run = {"id":uuid.uuid4().hex, "mode":mode, "descriptions":dict(descriptions) if mode != "ocr" else {},
+                       "methods":{}, "model_deployments":dict(deployments) if mode != "ocr" else {},
                        "results":{}, "error":"", "time":datetime.now().strftime("%H:%M:%S")}
                 started = time.monotonic()
                 try:
@@ -214,9 +215,11 @@ if st.button(f"글자 읽기 · {len(targets)}개 파일" if mode == "ocr" else 
                         else:
                             tuned = step == "tuned"
                             overrides = descriptions if tuned else None
+                            definition = make_analyzer_definition(tuned, descriptions_override=overrides)
+                            run["methods"] = {k: v["method"] for k, v in definition["fieldSchema"]["fields"].items()}
                             aid = analyzer_id(tuned, descriptions_override=overrides)
                             if aid not in prepared:
-                                client.ensure_analyzer(aid, make_analyzer_definition(tuned, descriptions_override=overrides))
+                                client.ensure_analyzer(aid, definition)
                                 prepared.add(aid)
                             run["results"][step] = client.analyze(aid, data, name, MIME[Path(name).suffix.lower()], model_deployments=deployments)
                 except (CUError, ValueError) as exc:
@@ -295,6 +298,11 @@ with result_tab:
             for k, label in FIELD_LABELS.items():
                 st.markdown(f"**{label}**")
                 st.write(run["descriptions"][k])
+        if run.get("methods"):
+            st.caption("이 실행의 필드별 추출 방식")
+            show_table([{"필드":FIELD_LABELS[k], "방식":v} for k,v in run["methods"].items()])
+        else:
+            st.caption("이전 버전 기록에는 추출 방식 정보가 없습니다.")
         st.caption("API 신뢰도는 정답률이 아닙니다. 제공된 값만 표시합니다.")
         st.json({FIELD_LABELS[k]:v for k,v in confidence.items() if v is not None})
         st.json(results)
@@ -307,6 +315,12 @@ with diff_tab:
     if "tuned" in results and previous:
         prev_index = st.selectbox("비교할 이전 실행", list(reversed(previous)), format_func=lambda i: f"{i+1}번째 실행")
         prev = record["runs"][prev_index]
+        if not prev.get("methods") or not run.get("methods"):
+            st.warning("추출 방식이 기록되지 않은 실행이 포함되어 있습니다. 설명 변경만의 효과를 비교하려면 새 버전에서 두 번 분석해 주세요.")
+        elif prev["methods"] != run["methods"] or prev.get("model_deployments") != run.get("model_deployments"):
+            st.warning("추출 방식 또는 모델 배포가 달라졌습니다. 아래 차이를 설명 변경만의 효과로 해석할 수 없습니다.")
+        else:
+            st.caption("두 실행의 필드별 추출 방식과 모델 배포 설정이 같습니다.")
         st.markdown("**이전 실행 → 선택한 실행**")
         show_table(comparison_rows(normalize_fields(prev["results"]["tuned"])[0], values))
         changed_rows = [{"필드":label, "이전 설명":prev["descriptions"].get(k,""), "현재 설명":run["descriptions"].get(k,"")} for k,label in FIELD_LABELS.items() if prev["descriptions"].get(k) != run["descriptions"].get(k)]

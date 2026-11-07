@@ -18,6 +18,8 @@ FIELD_LABELS = {
     "organizer": "주최/주관",
 }
 
+FIELD_METHODS = {field: ("generate" if field == "registration_deadline" else "extract") for field in FIELD_LABELS}
+
 BASE_DESCRIPTIONS = {
     "event_title": "포스터에 표시된 행사 또는 모임의 이름.",
     "event_date": "행사 포스터에 표시된 날짜.",
@@ -59,7 +61,7 @@ def make_analyzer_definition(tuned: bool, event_date_description: str | None = N
             "fields": {
                 field: {
                     "type": "string",
-                    "method": "extract",
+                    "method": FIELD_METHODS[field],
                     "estimateSourceAndConfidence": True,
                     "description": description,
                 }

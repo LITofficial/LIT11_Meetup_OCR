@@ -115,7 +115,7 @@ with input_col:
     else:
         sample_dir = Path(__file__).parent / "samples"
         sample_labels = {
-            "knu_slogan.png": "경북대학교 개교 80주년 슬로건 공모전",
+            "knu.jpg": "경북대학교 별빛수기 공모전",
             "lit11.jpg": "2026 LIT 11월 Meetup",
             "lit6.jpg": "2026 LIT 6월 Meetup",
         }

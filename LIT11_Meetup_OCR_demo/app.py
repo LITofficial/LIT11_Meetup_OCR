@@ -135,7 +135,7 @@ with input_col:
 with tip_col:
     with st.container(border=True):
         st.markdown("**처음이라면 이렇게 해 보세요**")
-        st.write("① 포스터 선택 → ② 글자만 읽기 → ③ 스키마 튜닝")
+        st.markdown("① 포스터 선택\n\n② 글자만 읽기\n\n③ 스키마 튜닝")
         st.caption("스키마는 행사 날짜·장소처럼 AI가 찾아야 할 항목과 그 설명입니다.")
 if files:
     with st.expander("선택한 원본 미리보기"):
